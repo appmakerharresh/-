@@ -1,4 +1,7 @@
-const GITHUB_API = "https://api.github.com/repos/appmakerharresh/-/contents/record.json?client_id=Ov23liBHw2DVbvcckYY0";
+const CLIENT_ID = "Ov23liBHw2DVbvcckYY0";
+const GITHUB_API = `https://api.github.com/repos/appmakerharresh/mydns/contents/record.json?client_id=${CLIENT_ID}`;
+const FALLBACK = "https://appmakerharresh.github.io/404/";
+
 let dnsMap = {};
 
 // Fetch and decode DNS map safely
@@ -7,43 +10,37 @@ async function getDNSMap() {
     const res = await fetch(GITHUB_API);
     const data = await res.json();
 
-    if(!data.content) {
+    if (!data.content) {
       console.error("record.json not found or content missing");
       return {};
     }
 
-    // Remove line breaks in Base64 and decode
-    const base64 = data.content.replace(/\n/g,'');
-    const map = JSON.parse(atob(base64));
-    return map;
-  } catch(e) {
+    const base64 = data.content.replace(/\n/g, '');
+    return JSON.parse(atob(base64));
+  } catch (e) {
     console.error("Failed to fetch DNS map:", e);
     return {};
   }
 }
 
-// Install Service Worker
-self.addEventListener('install', event => {
-  self.skipWaiting();
-});
+// Install
+self.addEventListener('install', event => self.skipWaiting());
 
 // Activate
-self.addEventListener('activate', event => {
-  self.clients.claim();
-});
+self.addEventListener('activate', event => self.clients.claim());
 
-// Intercept fetch requests
+// Fetch interception
 self.addEventListener('fetch', async event => {
-  if(!dnsMap || Object.keys(dnsMap).length === 0) {
+  if (!dnsMap || Object.keys(dnsMap).length === 0) {
     dnsMap = await getDNSMap();
   }
 
   const url = new URL(event.request.url);
-  const mapped = dnsMap[url.hostname];
-  
-  if(mapped) {
-    event.respondWith(fetch(mapped).catch(() => fetch('https://appmakerharresh.github.io/404/')));
+  const target = dnsMap[url.hostname];
+
+  if (target) {
+    event.respondWith(fetch(target).catch(() => fetch(FALLBACK)));
   } else {
-    event.respondWith(fetch(event.request).catch(() => fetch('https://appmakerharresh.github.io/404/')));
+    event.respondWith(fetch(event.request).catch(() => fetch(FALLBACK)));
   }
 });
