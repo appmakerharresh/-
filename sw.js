@@ -1,47 +1,49 @@
-const CLIENT_ID = "Ov23liBHw2DVbvcckYY0";
-const GITHUB_API = `https://api.github.com/repos/appmakerharresh/mydns/contents/record.json?client_id=${CLIENT_ID}`;
-const FALLBACK = "https://appmakerharresh.github.io/404/";
+const GITHUB_API = "https://api.github.com/repos/appmakerharresh/-/contents/record.json?client_id=Ov23liBHw2DVbvcckYY0";
+let dnsMap = {};
 
-// Install & activate immediately
-self.addEventListener('install', e => self.skipWaiting());
-self.addEventListener('activate', e => e.waitUntil(clients.claim()));
-
-// Always fetch latest DNS mapping from GitHub
+// Fetch and decode DNS map safely
 async function getDNSMap() {
-    try {
-        const res = await fetch(GITHUB_API);
-        const data = await res.json();
-        return JSON.parse(atob(data.content));
-    } catch (err) {
-        console.error('Failed to fetch DNS map:', err);
-        return {};
+  try {
+    const res = await fetch(GITHUB_API);
+    const data = await res.json();
+
+    if(!data.content) {
+      console.error("record.json not found or content missing");
+      return {};
     }
+
+    // Remove line breaks in Base64 and decode
+    const base64 = data.content.replace(/\n/g,'');
+    const map = JSON.parse(atob(base64));
+    return map;
+  } catch(e) {
+    console.error("Failed to fetch DNS map:", e);
+    return {};
+  }
 }
 
-// Intercept all fetch requests
-self.addEventListener('fetch', event => {
-    event.respondWith((async () => {
-        const dns = await getDNSMap();
-        const url = new URL(event.request.url);
-        const target = dns[url.hostname];
+// Install Service Worker
+self.addEventListener('install', event => {
+  self.skipWaiting();
+});
 
-        if (target) {
-            let fetchUrl = target;
-            if (!fetchUrl.endsWith('/') && url.pathname !== '/') fetchUrl += url.pathname;
+// Activate
+self.addEventListener('activate', event => {
+  self.clients.claim();
+});
 
-            try {
-                const resp = await fetch(fetchUrl);
-                const body = await resp.text();
-                return new Response(body, {
-                    headers: { "Content-Type": resp.headers.get("Content-Type") || "text/html" }
-                });
-            } catch {
-                const fallbackResp = await fetch(FALLBACK);
-                return new Response(await fallbackResp.text(), { headers: { "Content-Type": "text/html" } });
-            }
-        } else {
-            const fallbackResp = await fetch(FALLBACK);
-            return new Response(await fallbackResp.text(), { headers: { "Content-Type": "text/html" } });
-        }
-    })());
+// Intercept fetch requests
+self.addEventListener('fetch', async event => {
+  if(!dnsMap || Object.keys(dnsMap).length === 0) {
+    dnsMap = await getDNSMap();
+  }
+
+  const url = new URL(event.request.url);
+  const mapped = dnsMap[url.hostname];
+  
+  if(mapped) {
+    event.respondWith(fetch(mapped).catch(() => fetch('https://appmakerharresh.github.io/404/')));
+  } else {
+    event.respondWith(fetch(event.request).catch(() => fetch('https://appmakerharresh.github.io/404/')));
+  }
 });
